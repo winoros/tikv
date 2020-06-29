@@ -10,6 +10,7 @@ pub struct CmSketch {
     width: usize,
     count: u32,
     table: Vec<Vec<u32>>,
+    top_n: Vec<(Vec<u8>, u64)>,
 }
 
 impl CmSketch {
@@ -22,6 +23,7 @@ impl CmSketch {
                 width: w,
                 count: 0,
                 table: vec![vec![0; w]; d],
+                top_n: vec![],
             })
         }
     }
@@ -42,6 +44,19 @@ impl CmSketch {
             let j = (h1.wrapping_add(h2.wrapping_mul(i as u64)) % self.width as u64) as usize;
             row[j] = row[j].saturating_add(1);
         }
+    }
+
+    pub fn sub(&mut self, bytes: &[u8], cnt: u32) {
+        self.count -= cnt;
+        let (h1, h2) = CmSketch::hash(bytes);
+        for (i, row) in self.table.iter_mut().enumerate() {
+            let j = (h1.wrapping_add(h2.wrapping_mul(i as u64)) % self.width as u64) as usize;
+            row[j] = row[j].saturating_sub(cnt);
+        }
+    }
+
+    pub fn set_topn(&mut self, topn_data: Vec<(Vec<u8>, i32)>) {
+        self.top_n.push((topn_data.0.clone(), topn_data.1 as u64))
     }
 
     pub fn into_proto(self) -> tipb::CmSketch {

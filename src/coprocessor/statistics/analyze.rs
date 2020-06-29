@@ -1,6 +1,7 @@
 // Copyright 2017 TiKV Project Authors. Licensed under Apache-2.0.
 
 use std::mem;
+use std::collections::BinaryHeap;
 
 use async_trait::async_trait;
 use kvproto::coprocessor::{KeyRange, Response};
@@ -81,13 +82,32 @@ impl<S: Snapshot> AnalyzeContext<S> {
             req.get_cmsketch_depth() as usize,
             req.get_cmsketch_width() as usize,
         );
+        let mut heaps : Vec<BinaryHeap<(Vec<u8>, i32)>> = Vec::new();
+        let mut cur_val: Vec<(Vec<u8>, i32)> = Vec::new();
+        for _i in 0..i64::from(req.get_num_columns()) {
+            heaps.push(BinaryHeap::new());
+            cur_val.push((Vec::from(""), 0))
+        }
         while let Some(row) = scanner.next()? {
             let row = row.take_origin()?;
             let (bytes, end_offsets) = row.data.get_column_values_and_end_offsets();
             hist.append(bytes);
             if let Some(c) = cms.as_mut() {
-                for end_offset in end_offsets {
+                for (i, end_offset) in end_offsets.into_iter().enumerate() {
+                    if cur_val[i].0 == bytes[..end_offset].to_vec() {
+                        cur_val[i].1 += 1;
+                    } else {
+                        heaps[i].push(cur_val[i].clone());
+                        cur_val[i] = (Vec::from(""), 0)
+                    }
                     c.insert(&bytes[..end_offset])
+                }
+            }
+        }
+        if let Some(c) = cms.as_mut() {
+            for heap in heaps {
+                for heap_data in heap {
+                    c.sub(&heap_data.0, heap_data.1 as u32)
                 }
             }
         }
