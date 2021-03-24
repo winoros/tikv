@@ -451,10 +451,14 @@ impl RowSampleCollector {
 
     pub fn sampling(&mut self, data: Vec<Vec<u8>>) {
         let cur_rng = self.rng.gen_range(0, i64::MAX);
+        if self.samples.len() < self.max_sample_size {
+            self.samples.push(Reverse((cur_rng, data)));
+            return
+        }
         if self.samples.len() == self.max_sample_size && self.samples.peek().unwrap().0.0 < cur_rng {
             self.samples.pop();
+            self.samples.push(Reverse((cur_rng, data)));
         }
-        self.samples.push(Reverse((cur_rng, data)));
     }
 
     pub fn into_proto(self) -> tipb::RowSampleCollector {
