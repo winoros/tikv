@@ -355,22 +355,22 @@ impl<S: Snapshot> RowSampleBuilder<S> {
 
             let columns_slice = result.physical_columns.as_slice();
 
-            let mut column_vals: Vec<Vec<u8>> = Vec::new();
-            for (i, column_info) in self.columns_info.iter().enumerate() {
-                for logical_row in &result.logical_rows {
+            for logical_row in &result.logical_rows {
+                let mut column_vals: Vec<Vec<u8>> = Vec::new();
+                for i in 0..self.columns_info.len() {
                     let mut val = vec![];
                     columns_slice[i].encode(
                         *logical_row,
-                        column_info,
+                        &self.columns_info[i],
                         &mut EvalContext::default(),
                         &mut val,
                     )?;
-                    if column_info.as_accessor().is_string_like() {
+                    if self.columns_info[i].as_accessor().is_string_like() {
                         let sorted_val = match_template_collator! {
-                            TT, match column_info.as_accessor().collation()? {
+                            TT, match self.columns_info[i].as_accessor().collation()? {
                                 Collation::TT => {
                                     let mut mut_val = &val[..];
-                                    let decoded_val = table::decode_col_value(&mut mut_val, &mut EvalContext::default(), &column_info)?;
+                                    let decoded_val = table::decode_col_value(&mut mut_val, &mut EvalContext::default(), &self.columns_info[i])?;
                                     if decoded_val == Datum::Null {
                                         val
                                     } else {
@@ -387,9 +387,9 @@ impl<S: Snapshot> RowSampleBuilder<S> {
                     }
                     column_vals.push(val);
                 }
+                collector.count += 1;
+                collector.collect_column(column_vals);
             }
-            collector.count += 1;
-            collector.collect_column(column_vals);
         }
         Ok(AnalyzeSamplingResult::new(collector))
     }
