@@ -298,7 +298,7 @@ struct RowSampleBuilder<S: Snapshot> {
     stats_version: i32,
     columns_info: Vec<tipb::ColumnInfo>,
     common_handle_col_ids: Vec<i64>,
-    // column_groups: Vec<Vec<usize>>,
+    column_groups: Vec<tipb::AnalyzeColumnGroup>,
 }
 
 impl<S: Snapshot> RowSampleBuilder<S> {
@@ -329,6 +329,7 @@ impl<S: Snapshot> RowSampleBuilder<S> {
             stats_version: ANALYZE_VERSION_V2,
             columns_info,
             common_handle_col_ids: common_handle_ids,
+            column_groups: req.take_column_groups().into(),
         })
     }
 
@@ -342,7 +343,7 @@ impl<S: Snapshot> RowSampleBuilder<S> {
         let mut collector = RowSampleCollector::new(
             self.max_sample_size,
             self.max_fm_sketch_size,
-            self.columns_info.len(),
+            self.columns_info.len()+self.column_groups.len(),
         );
         while !is_drained {
             let time_slice_elapsed = time_slice_start.elapsed();
@@ -388,6 +389,7 @@ impl<S: Snapshot> RowSampleBuilder<S> {
                     column_vals.push(val);
                 }
                 collector.count += 1;
+                collector.collect_column_group(&column_vals, &self.column_groups);
                 collector.collect_column(column_vals);
             }
         }
@@ -434,6 +436,28 @@ impl RowSampleCollector {
             fm_sketches: vec![FmSketch::new(max_fm_sketch_size); col_and_group_len],
             rng: StdRng::from_entropy(),
             total_sizes: vec![0; col_and_group_len],
+        }
+    }
+
+    pub fn collect_column_group(&mut self, columns_val: &Vec<Vec<u8>>, column_groups: &Vec<tipb::AnalyzeColumnGroup>) {
+        let col_len = columns_val.len();
+        for i in 0..column_groups.len() {
+            let mut all_null = true;
+            for j in 0..column_groups[i].get_column_offsets().len() {
+                if columns_val[j][0] != NIL_FLAG {
+                    all_null = false
+                }
+                self.total_sizes[col_len+i] += columns_val[i].len() as i64
+            }
+            if all_null {
+                self.null_count[col_len+i] += 1;
+            }
+            let mut all_bytes: Vec<u8> = Vec::with_capacity(self.total_sizes[col_len+i] as usize);
+            // Use a in place murmur3 to replace this memory copy.
+            for j in 0..column_groups[i].get_column_offsets().len() {
+                all_bytes.append(&mut columns_val[j].clone())
+            }
+            self.fm_sketches[col_len+i].insert(&all_bytes);
         }
     }
 
