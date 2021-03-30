@@ -455,7 +455,7 @@ impl RowSampleCollector {
             let mut all_bytes: Vec<u8> = Vec::with_capacity(self.total_sizes[col_len+i] as usize);
             // Use a in place murmur3 to replace this memory copy.
             for j in 0..column_groups[i].get_column_offsets().len() {
-                all_bytes.append(&mut columns_val[j].clone())
+                all_bytes.extend_from_slice(&columns_val[j]);
             }
             self.fm_sketches[col_len+i].insert(&all_bytes);
         }
